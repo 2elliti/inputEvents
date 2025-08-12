@@ -19,8 +19,13 @@ typedef struct {
 } keyboard_devices;
 
 char *get_device_name(int fd){
-	char *device_name = (char *)malloc(sizeof(char) * 256);
-	ioctl(fd, EVIOCGNAME(sizeof(device_name)), device_name);
+	const size_t buflen = 256
+	char *device_name = (char *)malloc(sizeof(char) * buflen);
+	if(ioctl(fd, EVIOCGNAME(buflen), device_name) < 0){
+		perror("EVIOCGNAME");
+		free(device_name);
+		return NULL;
+	}
 	return device_name;
 }
 
@@ -43,15 +48,17 @@ ssize_t interrogate(struct dirent *dir,char *root){
 	strcpy(path,root);
 	strcat(path,dir->d_name);
 
-	if((evfd = open(path,O_RDONLY)) < 1){
-		perror("error while opening\n");
-		exit(1);
+	if((evfd = open(path,O_RDONLY)) < 0){
+		free(path);	
+		return -1;
 	}
 	
 	if (HasKeyEvents(evfd) && HasSpecificKey(evfd, KEY_B)) {
+		free(path);
 		return evfd;
 	}
-
+	
+	close(evfd);
 	free(path);
 	return -1;
 }
@@ -74,9 +81,13 @@ ssize_t get_devicelist_size(keyboard_devices * device_list){
 
 void set_capslock_status(int fd){
 	unsigned char status_led[LED_MAX/8 + 1];
-	ioctl(fd,EVIOCGLED(sizeof(status_led)), status_led);
-	if(test_bit(LED_NUML, status_led))is_numlock_on = true;
-	else is_numlock_on = false;		
+	
+	if(ioctl(fd,EVIOCGLED(sizeof(status_led)), status_led) < 0){
+		perror("EVIOCGLED");
+		return;
+	}
+	
+	is_numlock_on = test_bit(LED_NUML, status_led);	
 	printf("Current LED Status: %X\n", status_led);
 	printf("Current Num Lock Status: %d\n", test_bit(LED_NUML, status_led));
 }
@@ -113,14 +124,12 @@ void listen_input_devices(keyboard_devices *device_list){
 
 	set_capslock_status(fd);
 	
+	// audio connection join
 	while(true){
 		if(read(fd,&ev, sizeof(struct input_event)) != sizeof(struct input_event)) continue;	
 		if((ev.type == EV_KEY) && (ev.value == 1)){
 			printf(" Pressed key code: %d\n", ev.code);
 			if(ev.code == KEY_NUMLOCK){
-				// Okay now we have to decide what to do here.
-				// There will be two options here
-				// Either Numlock is switch on or off.
 				if(is_numlock_on)is_numlock_on = false;
 				else is_numlock_on = true;
 			}
@@ -129,10 +138,16 @@ void listen_input_devices(keyboard_devices *device_list){
 				switch(ev.code){
 					case KEY_KP8 : {
 						printf("Volume up!!\n");
+						// Increase volume by x percentage.
 						break;
 					}
 					case KEY_KP2 : {
 						printf("Volume down!!\n");
+						// Decrease volume by x  percentage.
+						break;
+					}
+					case KEY_KP5 : {
+						printf("volume mute!!\n");
 						break;
 					}
 					case KEY_KP0 : {
@@ -143,7 +158,8 @@ void listen_input_devices(keyboard_devices *device_list){
 			}
 		}
 
-	}	
+	}
+	// audio connection destroy	
 
 }
 
@@ -166,7 +182,7 @@ int main(){
 				(keyboard_input_devices + device_num)->fd = device_fd;
 				(keyboard_input_devices + device_num)->name = get_device_name(device_fd);
 				
-				(keyboard_input_devices + device_num)->path = (char *)malloc(sizeof(char *)*(strlen(dir->d_name)+strlen(root))+1);
+				(keyboard_input_devices + device_num)->path = (char *)malloc(sizeof(char )*(strlen(dir->d_name)+strlen(root))+1);
 				strcpy((keyboard_input_devices + device_num)->path,root);
 				strcat((keyboard_input_devices + device_num)->path,dir->d_name);
 				device_num++; 
