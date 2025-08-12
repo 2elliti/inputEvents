@@ -60,6 +60,52 @@ void print_key_devices(keyboard_devices *devstr){
 	}
 }
 
+ssize_t get_devicelist_size(keyboard_devices * device_list){
+	if(device_list == NULL) return -1;
+	ssize_t count = 0;
+	for(int index = 0; device_list[index].path != NULL; index++){
+		count++;
+	}
+
+	return count;
+}
+
+void listen_input_devices(keyboard_devices *device_list){
+	ssize_t list_size;
+	if((list_size = get_devicelist_size(device_list)) < 0){
+		fprintf(stderr, "No Device list found.\n");
+		exit(1);
+	}
+	
+	printf("Number of keyboard devices detected: %d.\n", list_size);
+	if(list_size == 0){
+		fprintf(stderr, "Path for device file is malfuctioned\n");
+		exit(1);
+	}
+	
+	if(list_size > 1){
+		printf("Multiple keyboard devices detected. Defaulting to first device\n");
+	}
+
+	printf("picked Device Name: %s, Device Path: %s.\n",device_list[0].name, device_list[0].path);
+	
+	// Now get the descriptor of the input device under scan.
+	int fd = device_list[0].fd;
+	
+	
+	// For storing event.
+	struct input_event ev;
+	
+	while(true){
+		if(read(fd,&ev, sizeof(struct input_event)) != sizeof(struct input_event)) continue;	
+		if((ev.type == EV_KEY) && (ev.value == 1)){
+			printf(" Pressed key code: %d\n", ev.code);
+		}
+
+	}	
+
+}
+
 int main(){
 	char root[50] = "/dev/input/";
 
@@ -89,6 +135,8 @@ int main(){
 
 	}
 	
-	print_key_devices(keyboard_input_devices);	
+	print_key_devices(keyboard_input_devices);
+
+	listen_input_devices(keyboard_input_devices);	
 
 }
