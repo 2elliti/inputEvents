@@ -10,6 +10,18 @@
 
 bool is_numlock_on = true;
 
+typedef struct {
+	int fd;
+	char *name;
+	char *path;
+} keyboard_devices;
+
+char *get_device_name(int fd){
+	char *device_name = (char *)malloc(sizeof(char) * 256);
+	ioctl(fd, EVIOCGNAME(sizeof(device_name)), device_name);
+	return device_name;
+}
+
 bool HasKeyEvents(int device_fd) {
   unsigned long evbit = 0;
   ioctl(device_fd, EVIOCGBIT(0, sizeof(evbit)), &evbit);
@@ -34,38 +46,18 @@ ssize_t interrogate(struct dirent *dir,char *root){
 		exit(1);
 	}
 	
-	char device_name[256];
-	ioctl(evfd, EVIOCGNAME(sizeof(device_name)), device_name);
-
 	if (HasKeyEvents(evfd) && HasSpecificKey(evfd, KEY_B)) {
-		printf("%s\n", device_name);
 		return evfd;
 	}
-	
 
+	free(path);
 	return -1;
 }
 
-void read_events(int fd){
-	struct input_event ev;
-
-	while(true){
-		ssize_t bytes = read(fd,&ev,sizeof(struct input_event));
-		if(bytes < 0){
-			perror("read");
-			exit(1);
-		}
-		
-
-		if(bytes == sizeof(struct input_event)){
-			if(ev.type == EV_KEY){
-				if(ev.value == 1){
-					printf("%d\n",ev.code);
-				}
-			}
-		}
+void print_key_devices(keyboard_devices *devstr){
+	for(int index = 0; devstr[index].path != NULL; index++){
+		printf("Device name: %s, Device fd: %d, Device path: %s\n", devstr[index].name, devstr[index].fd, devstr[index].path);
 	}
-
 }
 
 int main(){
@@ -73,23 +65,30 @@ int main(){
 
 	DIR *d;
 	struct dirent *dir;
-	char *target_device;
+
+	// Allocate enough devices. 11 devices are pretty enough.	
+	keyboard_devices *keyboard_input_devices = (keyboard_devices *)calloc(11, sizeof(keyboard_devices));
 
 	d = opendir(root);
 	int device_fd;
 
+	int device_num = 0;
 	if(d){
 		while(dir = readdir(d)){
 			if(dir->d_type == DT_CHR && ((device_fd = interrogate(dir,root)) > 0 )){
-				printf("%s has descriptor: %d\n", dir->d_name, device_fd);
-				//break;
+				(keyboard_input_devices + device_num)->fd = device_fd;
+				(keyboard_input_devices + device_num)->name = get_device_name(device_fd);
+				
+				(keyboard_input_devices + device_num)->path = (char *)malloc(sizeof(char *)*(strlen(dir->d_name)+strlen(root))+1);
+				strcpy((keyboard_input_devices + device_num)->path,root);
+				strcat((keyboard_input_devices + device_num)->path,dir->d_name);
+				device_num++; 
 			}
 		}
+		keyboard_input_devices[device_num].path = NULL;
 
 	}
-
-
-	//read_events(device_fd);
 	
+	print_key_devices(keyboard_input_devices);	
 
 }
