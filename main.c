@@ -5,8 +5,10 @@
 #include<stdlib.h>
 #include<fcntl.h>
 #include<unistd.h>
-#include <sys/ioctl.h>
-#include <linux/input.h>
+#include<sys/ioctl.h>
+#include<linux/input.h>
+#include<stdint.h>
+#define test_bit(bit, array) ((array[bit / 8] >> (bit % 8)) & 1)
 
 bool is_numlock_on = true;
 
@@ -70,6 +72,21 @@ ssize_t get_devicelist_size(keyboard_devices * device_list){
 	return count;
 }
 
+void set_capslock_status(int fd){
+	unsigned char status_led[LED_MAX/8 + 1];
+	ioctl(fd,EVIOCGLED(sizeof(status_led)), status_led);
+	if(test_bit(LED_NUML, status_led))is_numlock_on = true;
+	else is_numlock_on = false;		
+	printf("Current LED Status: %X\n", status_led);
+	printf("Current Num Lock Status: %d\n", test_bit(LED_NUML, status_led));
+}
+
+void print_event_interface_version(int fd){
+	uint32_t version;
+	ioctl(fd, EVIOCGVERSION, &version);
+	printf("Event Interface Version: %d.%d.%d\n", version >> 16, (version >> 8) & 0xff, (version & 0xff));
+}
+
 void listen_input_devices(keyboard_devices *device_list){
 	ssize_t list_size;
 	if((list_size = get_devicelist_size(device_list)) < 0){
@@ -87,19 +104,43 @@ void listen_input_devices(keyboard_devices *device_list){
 		printf("Multiple keyboard devices detected. Defaulting to first device\n");
 	}
 
-	printf("picked Device Name: %s, Device Path: %s.\n",device_list[0].name, device_list[0].path);
-	
-	// Now get the descriptor of the input device under scan.
+	printf("Picked Device Name: %s, Device Path: %s.\n",device_list[0].name, device_list[0].path);
 	int fd = device_list[0].fd;
-	
+	print_event_interface_version(fd);
 	
 	// For storing event.
 	struct input_event ev;
+
+	set_capslock_status(fd);
 	
 	while(true){
 		if(read(fd,&ev, sizeof(struct input_event)) != sizeof(struct input_event)) continue;	
 		if((ev.type == EV_KEY) && (ev.value == 1)){
 			printf(" Pressed key code: %d\n", ev.code);
+			if(ev.code == KEY_NUMLOCK){
+				// Okay now we have to decide what to do here.
+				// There will be two options here
+				// Either Numlock is switch on or off.
+				if(is_numlock_on)is_numlock_on = false;
+				else is_numlock_on = true;
+			}
+
+			if(is_numlock_on){
+				switch(ev.code){
+					case KEY_KP8 : {
+						printf("Volume up!!\n");
+						break;
+					}
+					case KEY_KP2 : {
+						printf("Volume down!!\n");
+						break;
+					}
+					case KEY_KP0 : {
+						printf("Spaceeee Barr!!!\n");
+						break;
+					}
+				}
+			}
 		}
 
 	}	
