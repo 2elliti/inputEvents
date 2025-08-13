@@ -19,7 +19,7 @@ typedef struct {
 } keyboard_devices;
 
 char *get_device_name(int fd){
-	const size_t buflen = 256
+	const size_t buflen = 256;
 	char *device_name = (char *)malloc(sizeof(char) * buflen);
 	if(ioctl(fd, EVIOCGNAME(buflen), device_name) < 0){
 		perror("EVIOCGNAME");
@@ -150,8 +150,15 @@ void listen_input_devices(keyboard_devices *device_list){
 						printf("volume mute!!\n");
 						break;
 					}
-					case KEY_KP0 : {
+					case KEY_RIGHTALT : {
 						printf("Spaceeee Barr!!!\n");
+						struct input_event space_ev;
+						space_ev.code = KEY_SPACE;
+						space_ev.value = 1;
+						write(fd, &space_ev, sizeof(struct input_event));
+						//usleep(200000);
+						space_ev.value = 0;
+						write(fd, &space_ev, sizeof(struct input_event));
 						break;
 					}
 				}
