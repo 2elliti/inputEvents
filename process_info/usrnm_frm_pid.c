@@ -40,8 +40,8 @@ void get_username_from_pid(pid_t pid, char **buffer) {
 
 int main(){
 	char *path = "/proc/4047";
-	strcpy(pid_path, path);
-	printf("print: %s\n", pid_path);
+	//strcpy(pid_path, path);
+	//printf("print: %s\n", pid_path);
 	char **buffer = malloc(sizeof(char *)*pid_path_size);
 	
 	get_username_from_pid(4047,buffer);
