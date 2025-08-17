@@ -8,6 +8,7 @@
 #include<sys/ioctl.h>
 #include<linux/input.h>
 #include<stdint.h>
+#include<poll.h>
 #define test_bit(bit, array) ((array[bit / 8] >> (bit % 8)) & 1)
 
 bool is_numlock_on = true;
@@ -100,6 +101,8 @@ void print_event_interface_version(int fd){
 
 void listen_input_devices(keyboard_devices *device_list){
 	ssize_t list_size;
+	struct pollfd pfd;
+	int poll_status;
 	if((list_size = get_devicelist_size(device_list)) < 0){
 		fprintf(stderr, "No Device list found.\n");
 		exit(1);
@@ -124,46 +127,54 @@ void listen_input_devices(keyboard_devices *device_list){
 
 	set_capslock_status(fd);
 	
-	// audio connection join
-	while(true){
-		if(read(fd,&ev, sizeof(struct input_event)) != sizeof(struct input_event)) continue;	
-		if((ev.type == EV_KEY) && (ev.value == 1)){
-			printf(" Pressed key code: %d\n", ev.code);
-			if(ev.code == KEY_NUMLOCK){
-				if(is_numlock_on)is_numlock_on = false;
-				else is_numlock_on = true;
-			}
+	pfd.fd = fd;
+	pfd.events = POLLIN;
 
-			if(is_numlock_on){
-				switch(ev.code){
-					case KEY_KP8 : {
-						printf("Volume up!!\n");
-						// Increase volume by x percentage.
-						break;
-					}
-					case KEY_KP2 : {
-						printf("Volume down!!\n");
-						// Decrease volume by x  percentage.
-						break;
-					}
-					case KEY_KP5 : {
-						printf("volume mute!!\n");
-						break;
-					}
-					case KEY_RIGHTALT : {
-						printf("Spaceeee Barr!!!\n");
-						struct input_event space_ev;
-						space_ev.code = KEY_SPACE;
-						space_ev.value = 1;
-						write(fd, &space_ev, sizeof(struct input_event));
-						//usleep(200000);
-						space_ev.value = 0;
-						write(fd, &space_ev, sizeof(struct input_event));
-						break;
+	poll_status = poll(&pfd, 1, -1);		
+
+	while(true){
+		// Check for event file
+		if(pfd.revents & POLLIN){
+			if(read(fd,&ev, sizeof(struct input_event)) != sizeof(struct input_event)) continue;	
+			if((ev.type == EV_KEY) && (ev.value == 1)){
+				printf(" Pressed key code: %d\n", ev.code);
+				if(ev.code == KEY_NUMLOCK){
+					if(is_numlock_on)is_numlock_on = false;
+					else is_numlock_on = true;
+				}
+
+				if(is_numlock_on){
+					switch(ev.code){
+						case KEY_KP8 : {
+							printf("Volume up!!\n");
+							// Increase volume by x percentage.
+							break;
+						}
+						case KEY_KP2 : {
+							printf("Volume down!!\n");
+							// Decrease volume by x  percentage.
+							break;
+						}
+						case KEY_KP5 : {
+							printf("volume mute!!\n");
+							break;
+						}
+						case KEY_RIGHTALT : {
+							printf("Spaceeee Barr!!!\n");
+							struct input_event space_ev;
+							space_ev.code = KEY_SPACE;
+							space_ev.value = 1;
+							write(fd, &space_ev, sizeof(struct input_event));
+							//usleep(200000);
+							space_ev.value = 0;
+							write(fd, &space_ev, sizeof(struct input_event));
+							break;
+						}
 					}
 				}
 			}
 		}
+		
 
 	}
 	// audio connection destroy	
