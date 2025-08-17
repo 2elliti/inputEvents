@@ -131,6 +131,10 @@ void listen_input_devices(keyboard_devices *device_list){
 	pfd.events = POLLIN;
 
 	poll_status = poll(&pfd, 1, -1);		
+	if(poll_status == -1){
+		perror("poll");
+		exit(1);
+	}
 
 	while(true){
 		// Check for event file
