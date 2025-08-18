@@ -1,14 +1,16 @@
-#include<stdio.h>
-#include<dirent.h>
-#include<stdbool.h>
-#include<string.h>
-#include<stdlib.h>
-#include<fcntl.h>
-#include<unistd.h>
-#include<sys/ioctl.h>
-#include<linux/input.h>
-#include<stdint.h>
-#include<poll.h>
+#include <stdio.h>
+#include <dirent.h>
+#include <stdbool.h>
+#include <string.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/ioctl.h>
+#include <linux/input.h>
+#include <stdint.h>
+#include <poll.h>
+#include <linux/uinput.h>
+
 #define test_bit(bit, array) ((array[bit / 8] >> (bit % 8)) & 1)
 
 bool is_numlock_on = true;
@@ -88,7 +90,7 @@ void set_capslock_status(int fd){
 		return;
 	}
 	
-	is_numlock_on = test_bit(LED_NUML, status_led);	
+	is_numlock_on = !test_bit(LED_NUML, status_led);	
 	printf("Current LED Status: %X\n", status_led);
 	printf("Current Num Lock Status: %d\n", test_bit(LED_NUML, status_led));
 }
@@ -99,7 +101,41 @@ void print_event_interface_version(int fd){
 	printf("Event Interface Version: %d.%d.%d\n", version >> 16, (version >> 8) & 0xff, (version & 0xff));
 }
 
-void listen_input_devices(keyboard_devices *device_list){
+void write_key_event(uint8_t code, int fd){
+	printf("Inside the write key event\n");
+	struct input_event ev;
+	
+	// Key pressed
+  	 memset(&ev, 0, sizeof(ev));
+    	ev.type = EV_KEY;
+    	ev.code = code;
+    	ev.value = 1;
+    	write(fd, &ev, sizeof(ev));
+
+	// Sync event for key press	
+    	memset(&ev, 0, sizeof(ev));
+    	ev.type = EV_SYN;
+    	ev.code = SYN_REPORT;
+    	ev.value = 0;
+    	write(fd, &ev, sizeof(ev));
+
+	// Key release.
+    	memset(&ev, 0, sizeof(ev));
+    	ev.type = EV_KEY;
+    	ev.code = code;
+    	ev.value = 0;
+    	write(fd, &ev, sizeof(ev));
+    	
+	// Sync event for key release
+    	memset(&ev, 0, sizeof(ev));
+    	ev.type = EV_SYN;
+    	ev.code = SYN_REPORT;
+    	ev.value = 0;
+    	write(fd, &ev, sizeof(ev));
+
+}
+
+void listen_input_devices(keyboard_devices *device_list, int uinput_fd){
 	ssize_t list_size;
 	struct pollfd pfd;
 	int poll_status;
@@ -151,6 +187,7 @@ void listen_input_devices(keyboard_devices *device_list){
 					switch(ev.code){
 						case KEY_KP8 : {
 							printf("Volume up!!\n");
+							write_key_event(KEY_SPACE, uinput_fd);
 							// Increase volume by x percentage.
 							break;
 						}
@@ -165,13 +202,6 @@ void listen_input_devices(keyboard_devices *device_list){
 						}
 						case KEY_RIGHTALT : {
 							printf("Spaceeee Barr!!!\n");
-							struct input_event space_ev;
-							space_ev.code = KEY_SPACE;
-							space_ev.value = 1;
-							write(fd, &space_ev, sizeof(struct input_event));
-							//usleep(200000);
-							space_ev.value = 0;
-							write(fd, &space_ev, sizeof(struct input_event));
 							break;
 						}
 					}
@@ -187,6 +217,10 @@ void listen_input_devices(keyboard_devices *device_list){
 
 int main(){
 	char root[50] = "/dev/input/";
+	char uinput[50] = "/dev/uinput";
+	int device_fd;
+	int uinput_fd;
+	struct uinput_setup usetup;		
 
 	DIR *d;
 	struct dirent *dir;
@@ -195,7 +229,6 @@ int main(){
 	keyboard_devices *keyboard_input_devices = (keyboard_devices *)calloc(11, sizeof(keyboard_devices));
 
 	d = opendir(root);
-	int device_fd;
 
 	int device_num = 0;
 	if(d){
@@ -216,6 +249,53 @@ int main(){
 	
 	print_key_devices(keyboard_input_devices);
 
-	listen_input_devices(keyboard_input_devices);	
+	// open uinput linux subsystem	
+	// https://kernel.org/doc/html/v4.12/input/uinput.html
 
+	uinput_fd = open(uinput, O_WRONLY | O_NONBLOCK);
+	if(uinput_fd < 0){
+		fprintf(stderr, "Error while opening uinput device\n");
+		close(device_fd);
+		exit(1);
+	}
+
+	if(ioctl(uinput_fd, UI_SET_EVBIT, EV_KEY)< 0){
+		fprintf(stderr, "Error while setting UI_SET_EVBIT\n");
+		close(uinput_fd);
+		close(device_fd);
+		exit(1);
+	}
+
+	if(ioctl(uinput_fd, UI_SET_KEYBIT, KEY_SPACE)< 0){
+		fprintf(stderr, "Error while setting UI_SET_KEYBIT\n");
+		close(uinput_fd);
+		close(device_fd);
+		exit(1);
+	}
+
+	memset(&usetup, 0, sizeof(usetup));
+   	usetup.id.bustype = BUS_USB;
+   	usetup.id.vendor = 0x1234; /* sample vendor */
+   	usetup.id.product = 0x5678; /* sample product */
+   	strcpy(usetup.name, "Keybinder device");
+
+   	if(ioctl(uinput_fd, UI_DEV_SETUP, &usetup) < 0){
+		fprintf(stderr, "Error while setting UI_DEV_SETUP\n");
+		close(uinput_fd);
+		close(device_fd);
+		exit(1);	
+	}
+
+   	if(ioctl(uinput_fd, UI_DEV_CREATE) < 0){
+		fprintf(stderr, "Error while setting UI_DEV_SETUP\n");
+		close(uinput_fd);
+		close(device_fd);
+		exit(1);
+	}
+
+	fprintf(stdout, "uinput subsystem opened\n");	
+
+	listen_input_devices(keyboard_input_devices, uinput_fd);	
+
+	return 0;
 }
